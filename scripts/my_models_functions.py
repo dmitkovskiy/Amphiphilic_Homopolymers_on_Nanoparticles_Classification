@@ -229,37 +229,37 @@ def map_values(input_arr: list[str]) -> tuple[str, any, any]:
     """
     elements = ' '.join(input_arr)
     mapping = {
-        "Sector": ("Sector", np.NaN, np.NaN),
+        "Sector": ("Sector", np.nan, np.nan),
 
 
-        "Sector Sector":                    ("Double helicoid", np.NaN, np.NaN),
-        "Sector Part of helicoid":          ("Double helicoid", np.NaN, np.NaN),
-        "Part of helicoid Part of helicoid":("Double helicoid", np.NaN, np.NaN),
+        "Sector Sector":                    ("Double helicoid", np.nan, np.nan),
+        "Sector Part of helicoid":          ("Double helicoid", np.nan, np.nan),
+        "Part of helicoid Part of helicoid":("Double helicoid", np.nan, np.nan),
         
-        "Disk":                             ("Disk", np.NaN, np.NaN),
-        "Sector Disk":                      ("Disk", "with sector", np.NaN),
-        "Sector Sector Disk":               ("Disk", "with two sectors", np.NaN),
+        "Disk":                             ("Disk", np.nan, np.nan),
+        "Sector Disk":                      ("Disk", "with sector", np.nan),
+        "Sector Sector Disk":               ("Disk", "with two sectors", np.nan),
 
-        "Disk Disk":                        ("Catenoid", np.NaN, np.NaN),
-        "Sector Disk  Disk":                ("Catenoid", "with sector", np.NaN),
-        "Sector Sector Disk  Disk":         ("Catenoid", "with two sectors", np.NaN),
+        "Disk Disk":                        ("Catenoid", np.nan, np.nan),
+        "Sector Disk  Disk":                ("Catenoid", "with sector", np.nan),
+        "Sector Sector Disk  Disk":         ("Catenoid", "with two sectors", np.nan),
 
-        "Disk Disk Disk":                   ("Costa", np.NaN, np.NaN),
-        "Sector Disk Disk Disk":            ("Costa", "with sector", np.NaN),
+        "Disk Disk Disk":                   ("Costa", np.nan, np.nan),
+        "Sector Disk Disk Disk":            ("Costa", "with sector", np.nan),
 
-        "Helicoid":                         ("Helicoid", np.NaN, np.NaN),
-        "Disk Helicoid":                    ("Helicoid", "with disk", np.NaN),
-        "Part of helicoid Disk":            ("Helicoid", "with disk", np.NaN),
+        "Helicoid":                         ("Helicoid", np.nan, np.nan),
+        "Disk Helicoid":                    ("Helicoid", "with disk", np.nan),
+        "Part of helicoid Disk":            ("Helicoid", "with disk", np.nan),
         "Sector Disk Helicoid":             ("Helicoid", "with disk", "and sector"),
         
-        "Enneper":                          ("Enneper", np.NaN, np.NaN),
-        "Sector Enneper":                   ("Enneper", "with sector", np.NaN),
-        "Sector Sector Enneper":            ("Enneper", "with two sectors", np.NaN),
+        "Enneper":                          ("Enneper", np.nan, np.nan),
+        "Sector Enneper":                   ("Enneper", "with sector", np.nan),
+        "Sector Sector Enneper":            ("Enneper", "with two sectors", np.nan),
     
-        "Complex structure":                ("Complex structure", np.NaN, np.NaN),
+        "Complex structure":                ("Complex structure", np.nan, np.nan),
     }
     
-    return mapping.get(elements, (elements, np.NaN, np.NaN))
+    return mapping.get(elements, (elements, np.nan, np.nan))
 
 def pred_structure(structure: np.ndarray, model: torch.nn.Module, n_shift: int = 10) -> tuple[str, any, any]:
     """
@@ -289,15 +289,15 @@ def pred_structure(structure: np.ndarray, model: torch.nn.Module, n_shift: int =
 
     return  structure, feature_1, feature_2
 
-def demo_predict_pipeline(structure: np.ndarray, model: torch.nn.Module, n_shift: int = 10, SP_diffuse_param = [0.65, 0.3,1]) -> None:
+def demo_predict_pipeline(structure: np.ndarray, model: torch.nn.Module, n_shift: int = 10) -> None:
     """
     Demonstrates a pipeline for predicting classes of structures.
     
     Parameters:
     - structure (np.ndarray): Array of points representing the structure.
     - models (dict): Dictionary of models.
-    - model_errors (dict): Dictionary of model errors for different classes.
-    
+    - n_shift (int): Number of shifts to perform.
+
     Returns:
     - None: Displays a 3D scatter plot and the 2D projections as images.
     """
