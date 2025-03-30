@@ -12,36 +12,34 @@ class CNN_Net(nn.Module):
         def __init__(self, image_height=18, image_width=24):
             super().__init__()
 
-            self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
-            self.relu1 = nn.ReLU()
-            self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-            self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-            self.relu2 = nn.ReLU()
-            self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-
+            self.block1 = nn.Sequential(
+                nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Dropout2d(p=0.25)
+            )
+            
+            self.block2 = nn.Sequential(
+                nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Dropout2d(p=0.25)
+            )
+            
             h, w = calculate_output_size(image_height, image_width)
 
-            self.flatten = nn.Flatten()
-            self.fc1 = nn.Linear(64 * h * w, 128)
-            self.relu3 = nn.ReLU()
-            self.fc2 = nn.Linear(128, 6)
+            self.classifier = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(64 * h * w, 128),
+                nn.ReLU(),
+                nn.Dropout(p=0.5),
+                nn.Linear(128, 6)
+            )
 
         def forward(self, x):
-            x = self.conv1(x)
-            x = self.relu1(x)
-            x = self.pool1(x)
-
-            x = self.conv2(x)
-            x = self.relu2(x)
-            x = self.pool2(x)
-
-            x =  self.flatten(x)
-
-            x = self.fc1(x)
-            x = self.relu3(x)
-            x = self.fc2(x)
-
+            x = self.block1(x)
+            x = self.block2(x)
+            x = self.classifier(x)
             return x
 
 def calculate_output_size(image_height: int, image_width: int) -> tuple[int, int]:
@@ -56,36 +54,26 @@ def calculate_output_size(image_height: int, image_width: int) -> tuple[int, int
     - tuple[int, int]: Height and width of the image after the layers.
     """
     
-    def conv2d_size_out(size, kernel_size=3, stride=1, padding=1):
+    def conv2d_size(size: int, kernel_size: int = 3, stride: int = 1, padding: int = 1) -> int:
         return (size - kernel_size + 2 * padding) // stride + 1
 
-    def maxpool2d_size_out(size, kernel_size=2, stride=2):
+    def maxpool2d_size(size: int, kernel_size: int = 2, stride: int = 2) -> int:
         return (size - kernel_size) // stride + 1
-
-    conv1_params = {'kernel_size': 3, 'stride': 1, 'padding': 1}
-    h = conv2d_size_out(image_height, **conv1_params)
-    w = conv2d_size_out(image_width, **conv1_params)
     
-    pool1_params = {'kernel_size': 2, 'stride': 2}
-    h = maxpool2d_size_out(h, **pool1_params)
-    w = maxpool2d_size_out(w, **pool1_params)
+    h, w = conv2d_size(image_height), conv2d_size(image_width)
+    h, w = maxpool2d_size(h), maxpool2d_size(w)
     
-    conv2_params = {'kernel_size': 3, 'stride': 1, 'padding': 1}
-    h = conv2d_size_out(h, **conv2_params)
-    w = conv2d_size_out(w, **conv2_params)
-
-    pool2_params = {'kernel_size': 2, 'stride': 2}
-    h = maxpool2d_size_out(h, **pool2_params)
-    w = maxpool2d_size_out(w, **pool2_params)
+    h, w = conv2d_size(h), conv2d_size(w)
+    h, w = maxpool2d_size(h), maxpool2d_size(w)
     
     return h, w
 
-def load_my_image_pred_model(model_path: str, image_height=18, image_width=24) -> CNN_Net:
+def load_my_image_pred_model(ckpt_path: str, image_height=18, image_width=24) -> CNN_Net:
     """
     Loads a trained CNN model from a file.
     
     Parameters:
-    - model_path (str): Path to the model file.
+    - ckpt_path (str): Path to the model file.
     - image_height (int): Height of the input images. Default is 18.
     - image_width (int): Width of the input images. Default is 24.
     
@@ -93,8 +81,16 @@ def load_my_image_pred_model(model_path: str, image_height=18, image_width=24) -
     - CNN_Net: The loaded CNN model.
     """
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
+
+    state_dict = {}
+    for key in checkpoint["state_dict"].keys():
+        key_new = key.lstrip("model.")
+        state_dict[key_new] = checkpoint["state_dict"][key]
+
     model = CNN_Net(image_height, image_width)
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(state_dict)
     model.eval()
 
     return model

@@ -1,199 +1,89 @@
 import torch
 import torch.nn as nn
-from torch import optim
-import torchmetrics
 
-from tbparse import SummaryReader
 import lightning as L
-from pytorch_lightning.callbacks import ModelCheckpoint
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
+from torchmetrics import MetricCollection
+from torchmetrics.classification import (
+    MulticlassAccuracy, MulticlassF1Score
+)
+
+import numpy as np
 import statistics
 from sklearn.metrics import confusion_matrix
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-class Lit(L.LightningModule):
-    def __init__(self, model: nn.Module, optimizer_type: str = 'SGD', learning_rate: float = 0.001, 
-                 momentum: float = 0.9, scheduler_type: str = 'cosine'):
-        """
-        Initializes the Lit class with the given parameters.
-
-        Parameters:
-        - model (nn.Module): The neural network model to be trained.
-        - optimizer_type (str): The type of optimizer to use ('SGD' or 'Adam'). Default is 'SGD'.
-        - learning_rate (float): The learning rate for the optimizer. Default is 0.001.
-        - momentum (float): The momentum for the SGD optimizer. Default is 0.9.
-        - scheduler_type (str): The type of learning rate scheduler to use ('cosine' for CosineAnnealingLR).
-        """
+class LModel(L.LightningModule):
+    def __init__(self, model, lr=0.001, gamma=0.9):
         super().__init__()
+        self.save_hyperparameters(logger=False)
+
+        # for optimizer and shaduler
+        self.lr = lr
+        self.gamma = gamma
+
+        # model
         self.model = model
-        self.train_acc = torchmetrics.Accuracy(task="multiclass", num_classes=6)
-        self.valid_acc = torchmetrics.Accuracy(task="multiclass", num_classes=6)
-        self.test_acc = torchmetrics.Accuracy(task="multiclass", num_classes=6)
-
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer_type = optimizer_type
-        self.learning_rate = learning_rate
-        self.momentum = momentum
-        self.scheduler_type = scheduler_type
 
-        # Define ModelCheckpoint callback
-        self.checkpoint_callback = ModelCheckpoint(
-            monitor='val_acc_epoch',
-            mode='max',
-            filename='best_model',
-            save_top_k=1,
-            verbose=True
-        )
+        # metrics
+        self.metrics = MetricCollection([
+            MulticlassAccuracy(num_classes=6,),
+            MulticlassF1Score(num_classes=6,)
+
+        ])
+        self.train_metrics = self.metrics.clone(postfix='/train')
+        self.val_metrics = self.metrics.clone(postfix='/val')
 
     def configure_optimizers(self):
-        """
-        Configures the optimizer and learning rate scheduler.
-
-        Returns:
-        - dict: Contains the optimizer and the learning rate scheduler if 'cosine' scheduler type is selected.
-        - optimizer: Returns only the optimizer if no scheduler is used.
-        """        
-        if self.optimizer_type == 'SGD':
-            optimizer = optim.SGD(self.model.parameters(), lr=self.learning_rate, momentum=self.momentum)
-        elif self.optimizer_type == 'Adam':
-            optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        else:
-            raise ValueError(f"Unsupported optimizer type: {self.optimizer_type}")
-
-        if self.scheduler_type == 'cosine':
-            scheduler = CosineAnnealingLR(optimizer, T_max=10)  # Adjust T_max as needed
-            return {'optimizer': optimizer, 'lr_scheduler': scheduler}
-        else:
-            return optimizer
+        # set optimizer
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.lr,
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "monitor": "loss"
+            },
+        }
 
     def training_step(self, batch, batch_idx):
-        """
-        Defines a single step in the training loop.
-
-        Parameters:
-        - batch (tuple): A tuple containing the inputs and labels for the current batch.
-        - batch_idx (int): The index of the current batch.
-
-        Returns:
-        - loss (torch.Tensor): The computed loss for the current batch.
-        """
-        inputs, labels = batch
-        pred = self.model(inputs)
-        loss = self.criterion(pred, labels)
-
-        self.log("train_loss", loss, prog_bar=True)
-        self.train_acc(pred, labels)
+        x, y = batch
+        out = self.model(x)
+        loss = self.criterion(out, y)
+        self.train_metrics.update(out, y)
+        self.log("loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        """
-        Defines a single step in the validation loop.
-
-        Parameters:
-        - batch (tuple): A tuple containing the inputs and labels for the current batch.
-        - batch_idx (int): The index of the current batch.
-        """
-        inputs, labels = batch
-        pred  = self.model(inputs)
-        loss = self.criterion(pred, labels)
-
-        self.log("val_loss", loss, prog_bar=True)
-        self.valid_acc(pred, labels)
+        x, y = batch
+        out = self.model(x)
+        self.val_metrics.update(out, y)
 
     def on_train_epoch_end(self):
-        """
-        Computes and logs the training accuracy at the end of an epoch.
-        """
-        train_acc_epoch = self.train_acc.compute()
-        self.log("train_acc_epoch", train_acc_epoch, prog_bar=True)
-        self.train_acc.reset()
+        self.log_dict(self.train_metrics.compute())
+        self.train_metrics.reset()
 
-    def on_validation_epoch_end(self):
-        """
-        Computes and logs the validation accuracy at the end of an epoch.
-        """
-        val_acc_epoch = self.valid_acc.compute()
-        self.log("val_acc_epoch", val_acc_epoch, prog_bar=True)
-        self.valid_acc.reset()
+        val_metrics = self.val_metrics.compute()
+        self.log_dict(val_metrics)
+        self.val_metrics.reset()
 
     def test_step(self, batch, batch_idx):
-        """
-        Defines a single step in the test loop.
-
-        Parameters:
-        - batch (tuple): A tuple containing the inputs and labels for the current batch.
-        - batch_idx (int): The index of the current batch.
-        """
-        inputs, labels = batch
-        pred = self.model(inputs)
-        loss = self.criterion(pred, labels)
-
-        self.log("test_loss", loss, prog_bar=True)
-        self.test_acc(pred, labels)
+        x, y = batch
+        out = self.model(x)
+        self.metrics.update(out, y)
 
     def on_test_epoch_end(self):
-        """
-        Computes and logs the test accuracy at the end of an epoch.
-        """
-        test_acc_epoch = self.test_acc.compute()
-        self.log("test_acc_epoch", test_acc_epoch, prog_bar=True)
-        self.test_acc.reset()
-
-def drop_nan(df, tag):
-    """
-    Drops NaN values from the specified column in the DataFrame.
-
-    Parameters:
-    - df (pd.DataFrame): The DataFrame containing the data.
-    - tag (str): The column from which to drop NaN values.
-
-    Returns:
-    - pd.Series: The column with NaN values removed.
-    """
-    return df[~df[tag].isna()].loc[:, tag]
-
-def plot_training_metrics(trainer):
-    """
-    Plot training and validation loss and accuracy from TensorBoard logs.
-    
-    Args:
-        trainer: The training object that contains the logger with the experiment data.
-        drop_nan (function): A function to drop NaN values from the DataFrame.
-    """
-    # Get the log directory
-    log_dir = trainer.logger.experiment.get_logdir()
-    
-    # Read the summary data
-    reader = SummaryReader(log_dir, pivot=True)
-    df = reader.scalars
-
-    # Create the plot
-    plt.figure(figsize=(12, 3))
-    
-    # Plot the loss
-    plt.subplot(1, 2, 1)
-    plt.plot(drop_nan(df, "train_loss"), label="train", color="blue")
-    plt.plot(drop_nan(df, "val_loss"), label="validation", color="orange")
-    plt.title("Loss")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.grid(True)
-    
-    # Plot the accuracy
-    plt.subplot(1, 2, 2)
-    plt.plot(drop_nan(df, "train_acc_epoch"), label="train", color="blue")
-    plt.plot(drop_nan(df, "val_acc_epoch"), label="validation", color="orange")
-    plt.title("Accuracy")
-    plt.ylabel("Accuracy")
-    plt.legend()
-    plt.grid(True)
-    
-    # Adjust layout and display the plot
-    plt.tight_layout()
-    plt.show()
+        self.log_dict(self.metrics.compute())
+        self.metrics.reset()    
 
 def plot_confusion_matrix(model_best, test_loader, test_set, n_shift=10):
     """
@@ -235,12 +125,25 @@ def plot_confusion_matrix(model_best, test_loader, test_set, n_shift=10):
                 av_predictions = []
 
     # Compute the confusion matrix
-    conf_matrix = confusion_matrix(all_labels, all_predictions)
+    cm = confusion_matrix(all_labels, all_predictions)
 
-    # Plot the confusion matrix
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=test_set.classes, yticklabels=test_set.classes)
-    plt.xlabel('Predicted')
-    plt.ylabel('Actual')
-    plt.title('Confusion Matrix')
+    # Plot confusion matrix
+    plt.figure(figsize=(6, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False, annot_kws={"size": 12})
+    plt.title('Confusion Matrix', fontsize=16, pad=15)
+    plt.xlabel('Predicted Label', fontsize=13, labelpad=10)
+    plt.ylabel('True Label', fontsize=13)
+
+    el_2_img_mapping = {
+        "0_Sector": "Segment",
+        "1_Part of helicoid": "Zigzag",
+        "2_Disk": "Circle",
+        "3_Helicoid": "Spiral",
+        "4_Enneper": "Tennis ball",
+        "5_Complex structure": "Serpent"
+    }
+    img_labels = [el_2_img_mapping[label] for label in test_set.classes]
+    plt.xticks(np.arange(6) + 0.5, labels=img_labels, rotation=0, fontsize=11)
+    plt.yticks(np.arange(6) + 0.5, labels=img_labels, rotation=45, fontsize=11)
+
     plt.show()
