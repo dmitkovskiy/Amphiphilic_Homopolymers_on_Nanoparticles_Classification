@@ -285,16 +285,48 @@ def move_image(input_path: str, output_path: str, n: int) -> None:
     image.close()
     new_image.close()
 
-def copy_images(main_folder_path: str, n_shift: int = 10) -> None:
+def mirror_image(input_path: str, hor: bool = True, vert: bool = True) -> None:
+    """
+    Mirrors image horizontally and/or vertically and saves them.
+
+    Parameters:
+    - input_path (str): The path to the input image.
+    - hor (bool): If True, creates and saves a horizontally mirrored image.
+    - vert (bool): If True, creates and saves a vertically mirrored image.
+
+    Returns:
+    - None: Saves the mirrored image(s).
+    """
+    image = Image.open(input_path)
+    base, ext = os.path.splitext(input_path)
+
+    if hor:
+        img_hor = image.transpose(Image.FLIP_LEFT_RIGHT)
+        hor_path = f"{base}_hor{ext}"
+        img_hor.save(hor_path)
+        img_hor.close()
+
+    if vert:
+        img_vert = image.transpose(Image.FLIP_TOP_BOTTOM)
+        vert_path = f"{base}_vert{ext}"
+        img_vert.save(vert_path)
+        img_vert.close()
+
+    image.close()
+
+def copy_images(main_folder_path: str, n_shift: int = 10,
+                hor: bool = False, vert: bool = False) -> None:
     """
     Copies and shifts images within folders.
 
     Parameters:
     - main_folder_path (str): The path to the main folder containing images.
-    - n_shift (int): The number of shifts to perform. Default is N_SHIFT.
+    - n_shift (int): The number of shifts to perform. Default is 10.
+    - hor (bool): If True, adds horizontally mirrored images.
+    - vert (bool): If True, adds vertically mirrored images.
 
     Returns:
-    - None: Copies and shifts the images.
+    - None: Copies, shifts, and optionally mirrors the images.
     """
     folders = [os.path.join(main_folder_path, f) for f in os.listdir(main_folder_path) if os.path.isdir(os.path.join(main_folder_path, f))]
     for folder in folders:
@@ -305,6 +337,8 @@ def copy_images(main_folder_path: str, n_shift: int = 10) -> None:
             new_file_name = name + f"_shift_{i+1}.jpg"
             new_image_path = os.path.join(os.path.dirname(image_path), new_file_name)
             move_image(image_path, new_image_path, n_shift)
+            if hor or vert:
+                mirror_image(new_image_path, hor=hor, vert=vert)
             image_path = new_image_path
 
 def load_dataset(dataset_path: str) -> datasets.ImageFolder:
